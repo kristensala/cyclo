@@ -1,11 +1,15 @@
-use std::borrow::Borrow;
 use std::time::Duration;
+use std::str;
 
-use anyhow::{Result, anyhow};
-use btleplug::api::{Central, Manager as _, Peripheral, ScanFilter};
+use anyhow::{Result, anyhow, Ok};
+use btleplug::api::{Central, Manager as _, Peripheral, ScanFilter, CharPropFlags, CentralEvent, PeripheralProperties};
 use btleplug::platform::{Manager, Adapter};
+use btleplug::api::bleuuid::uuid_from_u16;
 use tokio::time;
+use futures::stream::StreamExt;
 
+const HEART_RATE_SERVICE: uuid::Uuid = uuid_from_u16(0x180D);
+const HEART_RATE_CHARACTERISTICS: uuid::Uuid = uuid_from_u16(0x2A37);
 
 pub struct BluetoothCtl {
     adapters: Vec<Adapter>,
@@ -43,36 +47,101 @@ impl BluetoothCtl {
 
     //https://github.com/deviceplug/btleplug/blob/master/examples/discover_adapters_peripherals.rs
     pub async fn scan_devices(&self) -> Result<()> {
-        
-        for adapter in self.adapters.iter() {
+        if self.selected_adapter.is_none() {
+            return Err(anyhow!("Adapter is not selected!"));
+
+        } else {
+            let adapter = self.selected_adapter.as_ref().unwrap();
+            let mut events = adapter.events().await?;
+
             println!("Start scan on {}...", adapter.adapter_info().await?);
-
+            
             adapter.start_scan(ScanFilter::default()).await
-                .expect("Cant scan BLE adapter for connected devices...");
+                .expect("Can't scan BLE adapter for connected devices...");
 
-            time::sleep(Duration::from_secs(10)).await;
+            while let Some(event) = events.next().await {
+                match event {
+                    CentralEvent::DeviceDiscovered(id) => {
+                        let peripehral = adapter.peripheral(&id).await.unwrap();
+                        
+                        if peripehral.properties().await.unwrap().unwrap().local_name.iter().any(|name| name.contains("TICKR")) {
+                            println!("Device found");
 
-            let peripherals = adapter.peripherals().await?;
+                            peripehral.connect().await?;
+                            println!("Connected to device: {:?}", peripehral.properties().await.unwrap().unwrap().local_name);
 
-            if peripherals.is_empty() {
-                return Err(anyhow!("BLE peripehral devices not found."));
+                            peripehral.discover_services().await?;
+                            let charateristics = peripehral.characteristics();
+                            println!("Characteristics: {:?}", charateristics);
+
+                                
+                            let heart_rate_service = peripehral.services().into_iter().find(|service| service.uuid == HEART_RATE_SERVICE);
+                            if heart_rate_service.is_none() {
+                                println!("Heart Rate Service not found!");
+                                break;
+                            }
+
+                            let ch = heart_rate_service.unwrap().characteristics
+                                .into_iter()
+                                .find(|charateristic| charateristic.properties.contains(CharPropFlags::NOTIFY) 
+                                    && charateristic.uuid == HEART_RATE_CHARACTERISTICS);
+
+                            if ch.is_none() {
+                                println!("Heart Rate Characteristic not found!");
+                                break;
+                            }
+
+                            let hr_characteristic = &ch.unwrap();
+                            println!("Subscribing to HEART RATE characteristic {:?}", hr_characteristic.uuid);
+                            peripehral.subscribe(hr_characteristic).await?;
+
+
+                            let heart_rate_ch = hr_characteristic.clone();
+                            println!("Found response characteristic: {:?}", heart_rate_ch);
+
+                            let mut notification_stream = peripehral.notifications().await?;
+
+                            tokio::spawn(async move {
+                                while let Some(notification) = notification_stream.next().await {
+                                    if notification.uuid == heart_rate_ch.uuid {
+                                        let data = notification.value;
+
+                                        if data.len() < 3 { //TODO: not sure if i need this check
+                                            println!("Invalid data - [{}] {:?}", notification.uuid, data);
+                                            continue;
+                                        }
+
+                                        //TODO: read => https://stackoverflow.com/questions/65443033/heart-rate-value-in-ble/65458794?noredirect=1#comment118474300_65458794
+                                        //
+                                        // if byte 0 bit[0] is 0 then byte 2 is heart rate else
+                                        // byte 2 is u16 heart rate????
+                                        let hr = data[1];
+                                        println!("Heart rate: {:?}", hr);
+                                    } else {
+                                        println!("unknown notification: {:?}", notification);
+                                    }
+                                }
+                            });
+                            println!("Waiting for notifications");
+
+                        }
+                    }
+                    CentralEvent::DeviceConnected(id) => {
+
+                    }
+                    _ => {}
+                }
             }
 
-            for peripheral in peripherals.iter() {
-                let props = peripheral.properties().await?;
-                let local_name = props
-                    .unwrap()
-                    .local_name
-                    .unwrap_or(String::from("(name unknow)"));
-
-                println!("Peripheral: {:?}, ", local_name);
-            }
+            return Ok(());
         }
-
-        return Ok(());
     }
 
-    pub async fn connect_peripheral(peripheral_address: String) {
+    pub async fn connect_peripheral(&self, peripheral: &impl Peripheral) {
+        todo!();
+    }
+
+    pub async fn disconnect_peripheral(&self, peripheral: &impl Peripheral) {
         todo!();
     }
 
