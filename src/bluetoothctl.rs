@@ -1,11 +1,7 @@
-use std::time::Duration;
-use std::str;
-
 use anyhow::{Result, anyhow, Ok};
 use btleplug::api::{Central, Manager as _, Peripheral, ScanFilter, CharPropFlags, CentralEvent, PeripheralProperties};
 use btleplug::platform::{Manager, Adapter};
 use btleplug::api::bleuuid::uuid_from_u16;
-use tokio::time;
 use futures::stream::StreamExt;
 
 const HEART_RATE_SERVICE: uuid::Uuid = uuid_from_u16(0x180D);
@@ -13,7 +9,8 @@ const HEART_RATE_CHARACTERISTICS: uuid::Uuid = uuid_from_u16(0x2A37);
 
 pub struct BluetoothCtl {
     adapters: Vec<Adapter>,
-    selected_adapter: Option<Adapter>
+    selected_adapter: Option<Adapter>,
+    connected_devices: Vec<String>
 }
 
 impl BluetoothCtl {
@@ -36,7 +33,8 @@ impl BluetoothCtl {
         return Ok(
             BluetoothCtl {
                 adapters: adapters_list,
-                selected_adapter: adapter
+                selected_adapter: adapter,
+                connected_devices: Vec::new()
             }
         );
     }
@@ -46,7 +44,7 @@ impl BluetoothCtl {
     }
 
     //https://github.com/deviceplug/btleplug/blob/master/examples/discover_adapters_peripherals.rs
-    pub async fn scan_devices(&self) -> Result<()> {
+    pub async fn start(&self) -> Result<()> {
         if self.selected_adapter.is_none() {
             return Err(anyhow!("Adapter is not selected!"));
 
@@ -59,13 +57,20 @@ impl BluetoothCtl {
             adapter.start_scan(ScanFilter::default()).await
                 .expect("Can't scan BLE adapter for connected devices...");
 
+            //TODO: or sleep here for 10 seconds and then stop the scan?????
+
             while let Some(event) = events.next().await {
                 match event {
-                    CentralEvent::DeviceDiscovered(id) => {
+                    CentralEvent::DeviceDiscovered(id) => { // detect only fitness devices have HR
+                        // service and power service
                         let peripehral = adapter.peripheral(&id).await.unwrap();
                         
                         if peripehral.properties().await.unwrap().unwrap().local_name.iter().any(|name| name.contains("TICKR")) {
                             println!("Device found");
+                            
+                            // stop scan test
+                            adapter.stop_scan().await?;
+                            println!("Stop scanning devices!");
 
                             peripehral.connect().await?;
                             println!("Connected to device: {:?}", peripehral.properties().await.unwrap().unwrap().local_name);
@@ -123,11 +128,13 @@ impl BluetoothCtl {
                                 }
                             });
                             println!("Waiting for notifications");
-
                         }
                     }
                     CentralEvent::DeviceConnected(id) => {
 
+                    }
+                    CentralEvent::DeviceDisconnected(id) => {
+                        
                     }
                     _ => {}
                 }
@@ -137,12 +144,14 @@ impl BluetoothCtl {
         }
     }
 
-    pub async fn connect_peripheral(&self, peripheral: &impl Peripheral) {
-        todo!();
+    pub async fn connect_peripheral(&self, peripheral: &impl Peripheral) -> Result<()> {
+        peripheral.connect().await?;
+        return Ok(());
     }
 
-    pub async fn disconnect_peripheral(&self, peripheral: &impl Peripheral) {
-        todo!();
+    pub async fn disconnect_peripheral(&self, peripheral: &impl Peripheral) -> Result<()> {
+        peripheral.disconnect().await?;
+        return Ok(());
     }
 
 }
