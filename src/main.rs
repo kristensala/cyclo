@@ -8,8 +8,9 @@ pub mod app;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-//    let ctl = BluetoothCtl::new().await?;
-  //  ctl.start().await?;
-    app::main();
+    let ctl = BluetoothCtl::new().await?;
+
+    ctl.scan().await.unwrap();
+    _ = ctl.listen_events().await.unwrap();
     return Ok(());
 }
