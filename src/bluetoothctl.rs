@@ -42,7 +42,7 @@ pub async fn init() -> Result<Adapter, BluetoothError> {
     }
 
     let adap = adapter.unwrap();
-    //listen_events(&adap).await?;
+    listen_events(adap.clone()).await?;
 
     return Ok(
         adap
@@ -57,88 +57,89 @@ pub async fn scan(adapter: Option<Adapter>) -> Result<(), BluetoothError> {
     return Ok(());
 }
 
-async fn listen_events(adapter: &Adapter) -> Result<(), BluetoothError> {
+pub async fn listen_events(adapter: Adapter) -> Result<(), BluetoothError> {
     let mut events = adapter.events().await.unwrap();
+    tokio::spawn(async move {
+        while let Some(event) = events.next().await {
+            match event {
+                CentralEvent::DeviceDiscovered(id) => {
+                    let peripehral = adapter.peripheral(&id).await.unwrap();
+                    println!("discovered device: {:?}", peripehral.properties().await.unwrap().unwrap());
 
-    while let Some(event) = events.next().await {
-        match event {
-            CentralEvent::DeviceDiscovered(id) => {
-                let peripehral = adapter.peripheral(&id).await.unwrap();
-                println!("discovered device: {:?}", peripehral.properties().await.unwrap().unwrap());
-
-            }
-            CentralEvent::DeviceConnected(id) => {
-                println!("connected to device {:?}", id);
-
-                let peripehral = adapter.peripheral(&id).await.unwrap();
-                peripehral.discover_services().await.unwrap();
-
-                let charateristics = peripehral.characteristics();
-                println!("Characteristics: {:?}", charateristics);
-
-                let heart_rate_service = peripehral.services().into_iter().find(|service| service.uuid == HEART_RATE_SERVICE);
-                if heart_rate_service.is_none() {
-                    println!("Heart Rate Service not found! Not a valid device");
-                    peripehral.disconnect().await.unwrap();
-                } else {
-
-                    let ch = heart_rate_service.unwrap().characteristics
-                        .into_iter()
-                        .find(|charateristic| charateristic.properties.contains(CharPropFlags::NOTIFY) 
-                            && charateristic.uuid == HEART_RATE_CHARACTERISTICS);
-
-                    if ch.is_none() {
-                        println!("Heart Rate Characteristic not found!");
-                        break;
-                    }
-
-                    let hr_characteristic = &ch.unwrap();
-                    //println!("Subscribing to HEART RATE characteristic {:?}", hr_characteristic.uuid);
-                    peripehral.subscribe(hr_characteristic).await.unwrap();
-
-
-                    let heart_rate_ch = hr_characteristic.clone();
-                    //println!("Found response characteristic: {:?}", heart_rate_ch);
-
-                    let mut notification_stream = peripehral.notifications().await.unwrap();
-
-                    tokio::spawn(async move {
-                        while let Some(notification) = notification_stream.next().await {
-                            if notification.uuid == heart_rate_ch.uuid {
-                                let data = notification.value;
-
-                                if data.len() < 3 { //TODO: not sure if i need this check
-                                    println!("Invalid data - [{}] {:?}", notification.uuid, data);
-                                    continue;
-                                }
-
-                                //TODO: read => https://stackoverflow.com/questions/65443033/heart-rate-value-in-ble/65458794?noredirect=1#comment118474300_65458794
-                                //
-                                // if byte 0 bit[0] is 0 then byte 2 is heart rate else
-                                // byte 2 is u16 heart rate????
-                                let res = data[1]; // heart rate
-                                println!("heart rate: {:?}", res);
-                            }
-                            //todo: get power data
-                        }
-                    });
                 }
-            }
-            CentralEvent::DeviceDisconnected(id) => {
-            }
-            CentralEvent::ServiceDataAdvertisement { id, service_data } => {
-                let peripehral = adapter.peripheral(&id).await.unwrap();
-                println!("services data ad: {:?}", service_data);
+                CentralEvent::DeviceConnected(id) => {
+                    println!("connected to device {:?}", id);
 
-            }
-            CentralEvent::ServicesAdvertisement { id, services } => {
-                let peripehral = adapter.peripheral(&id).await.unwrap();
-                println!("services ad: {:?}", services);
-            }
+                    let peripehral = adapter.peripheral(&id).await.unwrap();
+                    peripehral.discover_services().await.unwrap();
 
-            _ => {}
+                    let charateristics = peripehral.characteristics();
+                    println!("Characteristics: {:?}", charateristics);
+
+                    let heart_rate_service = peripehral.services().into_iter().find(|service| service.uuid == HEART_RATE_SERVICE);
+                    if heart_rate_service.is_none() {
+                        println!("Heart Rate Service not found! Not a valid device");
+                        peripehral.disconnect().await.unwrap();
+                    } else {
+
+                        let ch = heart_rate_service.unwrap().characteristics
+                            .into_iter()
+                            .find(|charateristic| charateristic.properties.contains(CharPropFlags::NOTIFY) 
+                                && charateristic.uuid == HEART_RATE_CHARACTERISTICS);
+
+                        if ch.is_none() {
+                            println!("Heart Rate Characteristic not found!");
+                            break;
+                        }
+
+                        let hr_characteristic = &ch.unwrap();
+                        //println!("Subscribing to HEART RATE characteristic {:?}", hr_characteristic.uuid);
+                        peripehral.subscribe(hr_characteristic).await.unwrap();
+
+
+                        let heart_rate_ch = hr_characteristic.clone();
+                        //println!("Found response characteristic: {:?}", heart_rate_ch);
+
+                        let mut notification_stream = peripehral.notifications().await.unwrap();
+
+                        /*tokio::spawn(async move {
+                        while let Some(notification) = notification_stream.next().await {
+                        if notification.uuid == heart_rate_ch.uuid {
+                        let data = notification.value;
+
+                        if data.len() < 3 { //TODO: not sure if i need this check
+                        println!("Invalid data - [{}] {:?}", notification.uuid, data);
+                        continue;
+                        }
+
+                        //TODO: read => https://stackoverflow.com/questions/65443033/heart-rate-value-in-ble/65458794?noredirect=1#comment118474300_65458794
+                        //
+                        // if byte 0 bit[0] is 0 then byte 2 is heart rate else
+                        // byte 2 is u16 heart rate????
+                        let res = data[1]; // heart rate
+                        println!("heart rate: {:?}", res);
+                        }
+                        //todo: get power data
+                        }
+                        });*/
+                    }
+                }
+                CentralEvent::DeviceDisconnected(id) => {
+                }
+                CentralEvent::ServiceDataAdvertisement { id, service_data } => {
+                    let peripehral = adapter.peripheral(&id).await.unwrap();
+                    println!("services data ad: {:?}", service_data);
+
+                }
+                CentralEvent::ServicesAdvertisement { id, services } => {
+                    let peripehral = adapter.peripheral(&id).await.unwrap();
+                    println!("services ad: {:?}", services);
+                }
+
+                _ => {}
+            }
         }
-    }
+    });
 
     return Ok(());
 }

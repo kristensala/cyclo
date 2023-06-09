@@ -62,7 +62,7 @@ impl Application for App {
                 let adapter_guard = self.adapter.lock().unwrap();
                 let clone = adapter_guard.clone();
 
-                println!("adapter {:?}", clone);
+                //println!("adapter {:?}", clone);
                 return Command::perform(bluetoothctl::scan(clone), Message::DevicesScanned)
             }
             Message::DevicesScanned(resp) => {
