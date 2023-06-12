@@ -18,8 +18,7 @@ use iced::{
 
 
 pub struct App {
-    connected_devices: Vec<String>,
-    adapter: Arc<Mutex<Option<Adapter>>>
+    bluetooth_adapter: Arc<Mutex<Option<Adapter>>>
 }
 
 #[derive(Debug, Clone)]
@@ -41,8 +40,7 @@ impl Application for App {
     fn new(flags: Self::Flags) -> (Self, iced::Command<Self::Message>) {
         (
             Self {
-                connected_devices: Vec::new(),
-                adapter: Arc::new(Mutex::new(None))
+                bluetooth_adapter: Arc::new(Mutex::new(None))
             },
             Command::perform(bluetoothctl::init(), Message::InitBluetooth)
         )
@@ -56,10 +54,10 @@ impl Application for App {
         match message {
             Message::InitBluetooth(resp) => {
                 println!("adapter {:?}", resp);
-                *self.adapter.lock().unwrap() = Some(resp.unwrap());
+                *self.bluetooth_adapter.lock().unwrap() = Some(resp.unwrap());
             }
             Message::ScanDevices => {
-                let adapter_guard = self.adapter.lock().unwrap();
+                let adapter_guard = self.bluetooth_adapter.lock().unwrap();
                 let clone = adapter_guard.clone();
 
                 //println!("adapter {:?}", clone);
@@ -99,7 +97,7 @@ impl Application for App {
     }
 }
 
-pub fn main() -> iced::Result {
+fn main() -> iced::Result {
     return App::run(Settings::default());
 }
 

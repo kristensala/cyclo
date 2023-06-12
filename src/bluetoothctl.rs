@@ -1,37 +1,24 @@
-use btleplug::Error;
-use btleplug::api::{Central, Manager as _, Peripheral, ScanFilter, CharPropFlags, CentralEvent, PeripheralProperties};
-use btleplug::platform::{Manager, Adapter, PeripheralId};
+use btleplug::api::{Central, Manager as _, Peripheral, ScanFilter, CharPropFlags, CentralEvent};
+use btleplug::platform::{Manager, Adapter};
 use btleplug::api::bleuuid::uuid_from_u16;
 use futures::stream::StreamExt;
+use thiserror::Error;
 
 const HEART_RATE_SERVICE: uuid::Uuid = uuid_from_u16(0x180D);
 const HEART_RATE_CHARACTERISTICS: uuid::Uuid = uuid_from_u16(0x2A37);
 
-pub struct Device {
-    address: String,
-    id: String,
-    name: String,
-    is_connected: bool
-}
-
-
-#[derive(Debug, Clone)]
+#[derive(Error, Debug, Clone)]
 pub enum BluetoothError {
+    #[error("Unexpected error: {0}")]
+    UnexpectedError(String),
+    #[error("Adapter not found")]
     AdapterNotFound
 }
 
-impl std::fmt::Display for BluetoothError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::AdapterNotFound => write!(f, "Doesn't look too bad"),
-        }
-    }
-}
 
 pub async fn init() -> Result<Adapter, BluetoothError> {
-    let manager = Manager::new().await.unwrap();
+    let manager = Manager::new().await.expect("Failed to initialize manager!");
     let adapters_list = manager.adapters().await.unwrap();
-
 
     let mut adapter: Option<Adapter> = None;
     if adapters_list.len() == 1 {
@@ -41,24 +28,33 @@ pub async fn init() -> Result<Adapter, BluetoothError> {
         };
     }
 
-    let adap = adapter.unwrap();
-    listen_events(adap.clone()).await?;
+    if let Some(value) = adapter {
+        listen_events(value.clone()).await?;
+        return Ok(value);
+    }
 
-    return Ok(
-        adap
-    );
+    return Err(BluetoothError::AdapterNotFound);
 }
 
 pub async fn scan(adapter: Option<Adapter>) -> Result<(), BluetoothError> {
-    adapter.unwrap().start_scan(ScanFilter::default()).await
-        .expect("Can't scan BLE adapter for connected devices...");
+    match adapter {
+        Some(adapt) => {
+            adapt.start_scan(ScanFilter::default()).await
+                .expect("Can't scan BLE adapter for connected devices...");
 
-    println!("Scanned some shit");
-    return Ok(());
+            println!("Scanned some shit");
+            return Ok(());
+        },
+        None => Err(BluetoothError::AdapterNotFound)
+    }
 }
 
 pub async fn listen_events(adapter: Adapter) -> Result<(), BluetoothError> {
-    let mut events = adapter.events().await.unwrap();
+    let mut events = match adapter.events().await {
+        Ok(value) => value,
+        Err(error) => return Err(BluetoothError::UnexpectedError(error.to_string()))
+    };
+
     tokio::spawn(async move {
         while let Some(event) = events.next().await {
             match event {
@@ -76,7 +72,10 @@ pub async fn listen_events(adapter: Adapter) -> Result<(), BluetoothError> {
                     let charateristics = peripehral.characteristics();
                     println!("Characteristics: {:?}", charateristics);
 
-                    let heart_rate_service = peripehral.services().into_iter().find(|service| service.uuid == HEART_RATE_SERVICE);
+                    let heart_rate_service = peripehral.services()
+                        .into_iter()
+                        .find(|service| service.uuid == HEART_RATE_SERVICE);
+
                     if heart_rate_service.is_none() {
                         println!("Heart Rate Service not found! Not a valid device");
                         peripehral.disconnect().await.unwrap();
@@ -102,29 +101,31 @@ pub async fn listen_events(adapter: Adapter) -> Result<(), BluetoothError> {
 
                         let mut notification_stream = peripehral.notifications().await.unwrap();
 
-                        /*tokio::spawn(async move {
-                        while let Some(notification) = notification_stream.next().await {
-                        if notification.uuid == heart_rate_ch.uuid {
-                        let data = notification.value;
+                        //get data from the connected device
+                        tokio::spawn(async move {
+                            while let Some(notification) = notification_stream.next().await {
+                                if notification.uuid == heart_rate_ch.uuid {
+                                    let data = notification.value;
 
-                        if data.len() < 3 { //TODO: not sure if i need this check
-                        println!("Invalid data - [{}] {:?}", notification.uuid, data);
-                        continue;
-                        }
+                                    if data.len() < 3 { //TODO: not sure if i need this check
+                                        println!("Invalid data - [{}] {:?}", notification.uuid, data);
+                                        continue;
+                                    }
 
-                        //TODO: read => https://stackoverflow.com/questions/65443033/heart-rate-value-in-ble/65458794?noredirect=1#comment118474300_65458794
-                        //
-                        // if byte 0 bit[0] is 0 then byte 2 is heart rate else
-                        // byte 2 is u16 heart rate????
-                        let res = data[1]; // heart rate
-                        println!("heart rate: {:?}", res);
-                        }
-                        //todo: get power data
-                        }
-                        });*/
+                                    //TODO: read => https://stackoverflow.com/questions/65443033/heart-rate-value-in-ble/65458794?noredirect=1#comment118474300_65458794
+                                    //
+                                    // if byte 0 bit[0] is 0 then byte 2 is heart rate else
+                                    // byte 2 is u16 heart rate????
+                                    let res = data[1]; // heart rate
+                                    println!("heart rate: {:?}", res);
+                                }
+                                //todo: get power data
+                            }
+                        });
                     }
                 }
                 CentralEvent::DeviceDisconnected(id) => {
+
                 }
                 CentralEvent::ServiceDataAdvertisement { id, service_data } => {
                     let peripehral = adapter.peripheral(&id).await.unwrap();
@@ -140,6 +141,7 @@ pub async fn listen_events(adapter: Adapter) -> Result<(), BluetoothError> {
             }
         }
     });
+
 
     return Ok(());
 }
