@@ -1,8 +1,13 @@
+use std::sync::Arc;
+use std::time::Duration;
+
 use btleplug::api::{Central, Manager as _, Peripheral, ScanFilter, CharPropFlags, CentralEvent};
 use btleplug::platform::{Manager, Adapter};
 use btleplug::api::bleuuid::uuid_from_u16;
+use futures::channel::oneshot;
 use futures::stream::StreamExt;
 use thiserror::Error;
+use tokio::time;
 
 const HEART_RATE_SERVICE: uuid::Uuid = uuid_from_u16(0x180D);
 const HEART_RATE_CHARACTERISTICS: uuid::Uuid = uuid_from_u16(0x2A37);
@@ -15,52 +20,92 @@ pub enum BluetoothError {
     AdapterNotFound
 }
 
+#[derive(Debug, Clone)]
+pub struct Btle {
+    pub adapter: Arc<Adapter>,
+}
 
-pub async fn init() -> Result<Adapter, BluetoothError> {
-    let manager = Manager::new().await.expect("Failed to initialize manager!");
-    let adapters_list = manager.adapters().await.unwrap();
+impl Btle {
+    pub async fn init() -> Result<Btle, BluetoothError> {
+        let manager = Manager::new().await.expect("Failed to initialize manager!");
+        let adapters_list = manager.adapters().await.unwrap();
 
-    let mut adapter: Option<Adapter> = None;
-    if adapters_list.len() == 1 {
-        adapter = match adapters_list.first() {
-            Some(x) => Some(x.to_owned()),
-            None => None
+        let mut adapter: Option<Adapter> = None;
+        if adapters_list.len() == 1 {
+            adapter = match adapters_list.first() {
+                Some(x) => Some(x.to_owned()),
+                None => None
+            };
+        }
+
+        if let Some(value) = adapter {
+            return Ok(Btle {
+                adapter: Arc::new(value),
+            });
+        }
+
+        return Err(BluetoothError::AdapterNotFound);
+    }
+
+    pub async fn scan(self) -> Result<Vec<String>, ()> {
+        self.adapter.start_scan(ScanFilter::default()).await
+            .expect("Can't scan BLE adapter for connected devices...");
+
+        time::sleep(Duration::from_secs(10)).await;
+        _ = self.adapter.stop_scan().await;
+
+        let devices = self.adapter.peripherals().await.unwrap();
+
+        let mut result = Vec::new();
+        for device in devices {
+            let test = device.properties().await;
+            if let Ok(v) = test {
+                if let Some(s) = v {
+                    result.push(s.local_name.unwrap_or("dont".to_string()));
+                }
+            }
+        }
+
+        return Ok(result);
+    }
+
+    pub async fn listen_events(self) -> Result<(), BluetoothError> {
+        let mut events = match self.adapter.events().await {
+            Ok(value) => value,
+            Err(error) => return Err(BluetoothError::UnexpectedError(error.to_string()))
         };
-    }
 
-    if let Some(value) = adapter {
-        listen_events(value.clone()).await?;
-        return Ok(value);
-    }
+        let adapter = self.adapter;
+        tokio::spawn(async move {
+            while let Some(event) = events.next().await {
+                match event {
+                    CentralEvent::DeviceConnected(id) => {
+                    }
+                    _ => {
+                    }
+                }
+            }
+        });
 
-    return Err(BluetoothError::AdapterNotFound);
-}
-
-pub async fn scan(adapter: Option<Adapter>) -> Result<(), BluetoothError> {
-    match adapter {
-        Some(adapt) => {
-            adapt.start_scan(ScanFilter::default()).await
-                .expect("Can't scan BLE adapter for connected devices...");
-
-            println!("Scanned some shit");
-            return Ok(());
-        },
-        None => Err(BluetoothError::AdapterNotFound)
+        return Ok(());
     }
 }
 
-pub async fn listen_events(adapter: Adapter) -> Result<(), BluetoothError> {
+
+///////////////////////////
+pub async fn listen_eventss(adapter: Adapter) -> Result<String, BluetoothError> {
     let mut events = match adapter.events().await {
         Ok(value) => value,
         Err(error) => return Err(BluetoothError::UnexpectedError(error.to_string()))
     };
 
-    tokio::spawn(async move {
+    let res = tokio::spawn(async move {
         while let Some(event) = events.next().await {
             match event {
                 CentralEvent::DeviceDiscovered(id) => {
                     let peripehral = adapter.peripheral(&id).await.unwrap();
                     println!("discovered device: {:?}", peripehral.properties().await.unwrap().unwrap());
+                    return String::from("test");
 
                 }
                 CentralEvent::DeviceConnected(id) => {
@@ -123,27 +168,18 @@ pub async fn listen_events(adapter: Adapter) -> Result<(), BluetoothError> {
                             }
                         });
                     }
+                    return String::from("test");
                 }
-                CentralEvent::DeviceDisconnected(id) => {
-
+                _ => {
+                    return String::from("test");
                 }
-                CentralEvent::ServiceDataAdvertisement { id, service_data } => {
-                    let peripehral = adapter.peripheral(&id).await.unwrap();
-                    println!("services data ad: {:?}", service_data);
-
-                }
-                CentralEvent::ServicesAdvertisement { id, services } => {
-                    let peripehral = adapter.peripheral(&id).await.unwrap();
-                    println!("services ad: {:?}", services);
-                }
-
-                _ => {}
             }
         }
+        return String::from("test");
     });
 
-
-    return Ok(());
+    let join = res.await.unwrap();
+    return Ok(String::from("discovered"))
 }
 
 

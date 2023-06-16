@@ -1,12 +1,14 @@
 use std::io::stdout;
 use std::sync::{Arc, Mutex};
 use anyhow::Result;
-use bluetoothctl::{BluetoothError};
+use bluetoothctl::{BluetoothError, Btle};
 
 pub mod bluetoothctl;
 pub mod device;
 
+use btleplug::api::Peripheral;
 use btleplug::platform::Adapter;
+use device::Device;
 use iced::theme::{self, Theme};
 use iced::executor;
 use iced::widget::{
@@ -16,17 +18,19 @@ use iced::{
     Alignment, Application, Command, Element, Length, Settings, Subscription,
 };
 
-
+#[derive(Clone, Debug)]
 pub struct App {
-    bluetooth_adapter: Arc<Mutex<Option<Adapter>>>
+    btle: Arc<Mutex<Option<Btle>>>,
+    scanned_devices: Vec<String>
+
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    InitBluetooth(Result<Adapter, BluetoothError>),
+    InitBluetooth(Result<Btle, BluetoothError>),
     DiscoverDevices,
     ScanDevices,
-    DevicesScanned(Result<(), BluetoothError>),
+    DevicesScanned(Result<Vec<String>, ()>),
     Connect,
     Disconnect
 }
@@ -40,9 +44,10 @@ impl Application for App {
     fn new(flags: Self::Flags) -> (Self, iced::Command<Self::Message>) {
         (
             Self {
-                bluetooth_adapter: Arc::new(Mutex::new(None))
+                btle: Arc::new(Mutex::new(None)),
+                scanned_devices: Vec::new()
             },
-            Command::perform(bluetoothctl::init(), Message::InitBluetooth)
+            Command::perform(Btle::init(), Message::InitBluetooth)
         )
     }
 
@@ -54,18 +59,21 @@ impl Application for App {
         match message {
             Message::InitBluetooth(resp) => {
                 println!("adapter {:?}", resp);
-                *self.bluetooth_adapter.lock().unwrap() = Some(resp.unwrap());
+                //*self.bluetooth_adapter.lock().unwrap() = Some(resp.unwrap());
+                *self.btle.lock().unwrap() = Some(resp.unwrap());
+
             }
             Message::ScanDevices => {
-                let adapter_guard = self.bluetooth_adapter.lock().unwrap();
-                let clone = adapter_guard.clone();
+                let btle_guard = self.btle.lock().unwrap();
+                let clone = btle_guard.clone().unwrap();
 
-                //println!("adapter {:?}", clone);
-                return Command::perform(bluetoothctl::scan(clone), Message::DevicesScanned)
+                return Command::perform(clone.scan(), Message::DevicesScanned)
             }
             Message::DevicesScanned(resp) => {
-
+                self.scanned_devices = resp.unwrap();
+                println!("scanned {:?}", self);
             }
+
             _ => {
             }
         }
