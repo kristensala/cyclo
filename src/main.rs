@@ -1,15 +1,11 @@
-use std::io::stdout;
 use std::sync::{Arc, Mutex};
-use anyhow::Result;
 use bluetoothctl::{BluetoothError, Btle, listen_events};
+use tokio_stream::{self as stream, StreamExt};
 
 pub mod bluetoothctl;
 pub mod device;
 pub mod state;
 
-use btleplug::api::Peripheral;
-use btleplug::platform::Adapter;
-use device::Device;
 use iced::theme::{self, Theme};
 use iced::executor;
 use iced::widget::{
@@ -87,9 +83,22 @@ impl Application for App {
                 
             }
             Message::GetState => {
-                let state = Arc::clone(&self.state);
-                let lock = state.lock().unwrap();
-                println!("catch: {:?}", lock.heart_rate);
+                let mut count = 0;
+                loop {
+                    let clone = Arc::clone(&self.state);
+                    let lock = clone.lock().unwrap();
+
+                    let array = lock.heart_rate_history.clone();
+
+                    if count < array.len() {
+                        let last = array.last();
+                        println!("{:?}", last);
+                    }
+
+                    count = array.len();
+                }
+
+
             }
             _ => {
 

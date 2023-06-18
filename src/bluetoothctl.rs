@@ -137,6 +137,7 @@ pub async fn listen_events(adapter: Adapter, state: Arc<Mutex<State>>) -> Result
 
                                     let mut state_lock = state_clone.lock().unwrap();
                                     state_lock.heart_rate = res;
+                                    state_lock.heart_rate_history.push(res);
 
                                     println!("heart rate: {:?}",res);
                                 }
