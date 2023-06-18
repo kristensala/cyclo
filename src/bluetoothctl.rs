@@ -1,13 +1,14 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use btleplug::api::{Central, Manager as _, Peripheral, ScanFilter, CharPropFlags, CentralEvent};
 use btleplug::platform::{Manager, Adapter};
 use btleplug::api::bleuuid::uuid_from_u16;
-use futures::channel::oneshot;
 use futures::stream::StreamExt;
 use thiserror::Error;
 use tokio::time;
+
+use crate::state::State;
 
 const HEART_RATE_SERVICE: uuid::Uuid = uuid_from_u16(0x180D);
 const HEART_RATE_CHARACTERISTICS: uuid::Uuid = uuid_from_u16(0x2A37);
@@ -22,7 +23,8 @@ pub enum BluetoothError {
 
 #[derive(Debug, Clone)]
 pub struct Btle {
-    pub adapter: Arc<Adapter>,
+    pub adapter: Adapter,
+    pub heart_rate_device_connected: bool
 }
 
 impl Btle {
@@ -39,8 +41,11 @@ impl Btle {
         }
 
         if let Some(value) = adapter {
+            //listen_events(value.clone(), state).await;
+
             return Ok(Btle {
-                adapter: Arc::new(value),
+                adapter: value,
+                heart_rate_device_connected: false
             });
         }
 
@@ -69,45 +74,19 @@ impl Btle {
         return Ok(result);
     }
 
-    pub async fn listen_events(self) -> Result<(), BluetoothError> {
-        let mut events = match self.adapter.events().await {
-            Ok(value) => value,
-            Err(error) => return Err(BluetoothError::UnexpectedError(error.to_string()))
-        };
-
-        let adapter = self.adapter;
-        tokio::spawn(async move {
-            while let Some(event) = events.next().await {
-                match event {
-                    CentralEvent::DeviceConnected(id) => {
-                    }
-                    _ => {
-                    }
-                }
-            }
-        });
-
-        return Ok(());
-    }
 }
 
-
-///////////////////////////
-pub async fn listen_eventss(adapter: Adapter) -> Result<String, BluetoothError> {
+pub async fn listen_events(adapter: Adapter, state: Arc<Mutex<State>>) -> Result<(), BluetoothError> {
     let mut events = match adapter.events().await {
         Ok(value) => value,
         Err(error) => return Err(BluetoothError::UnexpectedError(error.to_string()))
     };
 
-    let res = tokio::spawn(async move {
+    tokio::spawn(async move {
+        println!("Starting a new listening thread");
+
         while let Some(event) = events.next().await {
             match event {
-                CentralEvent::DeviceDiscovered(id) => {
-                    let peripehral = adapter.peripheral(&id).await.unwrap();
-                    println!("discovered device: {:?}", peripehral.properties().await.unwrap().unwrap());
-                    return String::from("test");
-
-                }
                 CentralEvent::DeviceConnected(id) => {
                     println!("connected to device {:?}", id);
 
@@ -115,17 +94,11 @@ pub async fn listen_eventss(adapter: Adapter) -> Result<String, BluetoothError> 
                     peripehral.discover_services().await.unwrap();
 
                     let charateristics = peripehral.characteristics();
-                    println!("Characteristics: {:?}", charateristics);
-
                     let heart_rate_service = peripehral.services()
                         .into_iter()
                         .find(|service| service.uuid == HEART_RATE_SERVICE);
 
-                    if heart_rate_service.is_none() {
-                        println!("Heart Rate Service not found! Not a valid device");
-                        peripehral.disconnect().await.unwrap();
-                    } else {
-
+                    if heart_rate_service.is_some() {
                         let ch = heart_rate_service.unwrap().characteristics
                             .into_iter()
                             .find(|charateristic| charateristic.properties.contains(CharPropFlags::NOTIFY) 
@@ -137,17 +110,16 @@ pub async fn listen_eventss(adapter: Adapter) -> Result<String, BluetoothError> 
                         }
 
                         let hr_characteristic = &ch.unwrap();
-                        //println!("Subscribing to HEART RATE characteristic {:?}", hr_characteristic.uuid);
                         peripehral.subscribe(hr_characteristic).await.unwrap();
 
-
                         let heart_rate_ch = hr_characteristic.clone();
-                        //println!("Found response characteristic: {:?}", heart_rate_ch);
-
                         let mut notification_stream = peripehral.notifications().await.unwrap();
 
+                        let state_clone = Arc::clone(&state);
                         //get data from the connected device
                         tokio::spawn(async move {
+                            println!("Starting a new getting data thread");
+
                             while let Some(notification) = notification_stream.next().await {
                                 if notification.uuid == heart_rate_ch.uuid {
                                     let data = notification.value;
@@ -162,27 +134,23 @@ pub async fn listen_eventss(adapter: Adapter) -> Result<String, BluetoothError> 
                                     // if byte 0 bit[0] is 0 then byte 2 is heart rate else
                                     // byte 2 is u16 heart rate????
                                     let res = data[1]; // heart rate
-                                    println!("heart rate: {:?}", res);
+
+                                    let mut state_lock = state_clone.lock().unwrap();
+                                    state_lock.heart_rate = res;
+
+                                    println!("heart rate: {:?}",res);
                                 }
-                                //todo: get power data
                             }
                         });
                     }
-                    return String::from("test");
                 }
                 _ => {
-                    return String::from("test");
                 }
             }
         }
-        return String::from("test");
     });
-
-    let join = res.await.unwrap();
-    return Ok(String::from("discovered"))
+    return Ok(());
 }
-
-
 
     //https://github.com/deviceplug/btleplug/blob/master/examples/discover_adapters_peripherals.rs
    /* pub async fn start(&self) -> Result<(), BluetoothError> {
