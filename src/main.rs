@@ -1,10 +1,8 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use bluetoothctl::{BluetoothError, Btle, listen_events};
-use tokio_stream::{self as stream, StreamExt};
 
 pub mod bluetoothctl;
-pub mod device;
 pub mod state;
 
 use iced::theme::{self, Theme};
@@ -17,38 +15,32 @@ use iced::{
 };
 use state::State;
 
-
-struct AppState {
-    current_heart_rate: Option<u8>,
-    current_power: Option<u8>
-}
-
 #[derive(Clone, Debug)]
 pub struct App {
     btle: Option<Btle>,
-    scanned_devices: Vec<String>,
     state: Arc<Mutex<State>>,
-    listen: Listen,
-    heart_beat: u8
+    tick: Tick,
+    display_heart_rate: u8,
+    display_power: u8,
+    display_scanned_devices: Vec<String>
 }
 
 #[derive(Debug, Clone)]
-enum Listen {
+enum Tick {
     Idle,
-    Heartbeat
+    Listen
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
     InitBluetooth(Result<Btle, BluetoothError>),
-    DiscoverDevices,
     ScanDevices,
-    DevicesScanned(Result<Vec<String>, ()>),
+    FoundDevices(Result<Vec<String>, ()>),
     Connect,
     Disconnect,
     ListenEvents,
     ReadData(Result<(), BluetoothError>),
-    Heartbeat(Instant)
+    Tick(Instant)
 }
 
 impl Application for App {
@@ -61,10 +53,11 @@ impl Application for App {
         (
             Self {
                 btle: None,
-                scanned_devices: Vec::new(),
                 state: Arc::new(Mutex::new(State::new())),
-                listen: Listen::Heartbeat,
-                heart_beat: 0
+                tick: Tick::Listen,
+                display_heart_rate: 0,
+                display_power: 0,
+                display_scanned_devices: Vec::new()
             },
             Command::perform(Btle::init(), Message::InitBluetooth)
         )
@@ -81,11 +74,13 @@ impl Application for App {
                 self.btle = Some(resp.unwrap());
             }
             Message::ScanDevices => {
-                return Command::perform(self.btle.clone().unwrap().scan(), Message::DevicesScanned)
+                return Command::perform(self.btle.clone().unwrap().scan(), Message::FoundDevices)
             }
-            Message::DevicesScanned(resp) => {
-                self.scanned_devices = resp.unwrap();
-                println!("scanned {:?}", self);
+            Message::FoundDevices(resp) => {
+                println!("scanned {:?}", resp);
+                if let Ok(value) = resp {
+                    self.display_scanned_devices = value;
+                }
             }
             Message::ListenEvents => {
                 let btle = self.btle.clone().unwrap();
@@ -94,14 +89,13 @@ impl Application for App {
                 return Command::perform(listen_events(btle.adapter, state), Message::ReadData);
             }
             Message::ReadData(resp) => {
-                println!("Started listending events");
-                
+                println!("Started listening data");
             }
-            Message::Heartbeat(_) => {
-                // display heartrate on ui
+            Message::Tick(_) => {
                 let clone = Arc::clone(&self.state);
                 let lock = clone.lock().unwrap();
-                self.heart_beat = lock.heart_rate;
+                self.display_heart_rate = lock.heart_rate;
+                //todo set display power
             }
             _ => {
 
@@ -112,26 +106,43 @@ impl Application for App {
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        match self.listen {
-            Listen::Idle=> Subscription::none(),
-            Listen::Heartbeat => {
-                // trigger hearbeat message on every second
-                time::every(Duration::from_secs(1)).map(Message::Heartbeat)
+        match self.tick {
+            Tick::Idle=> Subscription::none(),
+            Tick::Listen => {
+                time::every(Duration::from_millis(500)).map(Message::Tick)
             },
         }
     }
 
     
     fn view(&self) -> Element<Message> {
-        let scan_btn = button("Scan").on_press(Message::ScanDevices).padding(5.);
-        let listen_btn = button("Listen").on_press(Message::ListenEvents).padding(5.);
+        let scan_btn = button("Scan")
+            .on_press(Message::ScanDevices)
+            .padding(5.);
 
-        let beat = text(self.heart_beat).size(40);
+        let display_devices = self.display_scanned_devices.clone();
+        let scanned_devices = column(
+            display_devices
+                .into_iter()
+                .map(|device| {
+                    row![text(device)]
+                        .spacing(10)
+                        .into()
+                }).collect()
+        );
+
+
+        let listen_btn = button("Listen")
+            .on_press(Message::ListenEvents)
+            .padding(5.);
+
+        let heart_beat = text(self.display_heart_rate).size(40);
 
         let content = column![
             scan_btn,
+            scanned_devices,
             listen_btn,
-            beat
+            heart_beat
         ]
         .width(Length::Fill)
         .align_items(Alignment::Center)
