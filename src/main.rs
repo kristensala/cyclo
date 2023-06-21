@@ -21,9 +21,10 @@ pub struct App {
     state: Arc<Mutex<State>>,
     tick: Tick,
     display_heart_rate: u8,
-    display_power: u8,
+    display_power: u8, // don't know the datatype currently
     display_scanned_devices: Vec<Device>,
-    connected_devices: Vec<Device>
+    connected_devices: Vec<Device>,
+    errors: Vec<String>
 }
 
 #[derive(Debug, Clone)]
@@ -59,7 +60,8 @@ impl Application for App {
                 display_heart_rate: 0,
                 display_power: 0,
                 display_scanned_devices: Vec::new(),
-                connected_devices: Vec::new()
+                connected_devices: Vec::new(),
+                errors: Vec::new()
             },
             Command::perform(Btle::init(), Message::InitBluetooth)
         )
@@ -72,11 +74,26 @@ impl Application for App {
     fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
         match message {
             Message::InitBluetooth(resp) => {
-                println!("adapter {:?}", resp);
-                self.btle = Some(resp.unwrap());
+                match resp {
+                    Ok(value) => {
+                        self.btle = Some(value);
+                    },
+                    Err(err) => {
+                        //todo: make a ui section to display errors
+                        self.errors.push(err.to_string())
+                    }
+                }
             }
             Message::ScanDevices => {
-                return Command::perform(self.btle.clone().unwrap().scan(), Message::FoundDevices)
+                match self.btle.clone() {
+                    Some(value) => {
+                        return Command::perform(value.scan(), Message::FoundDevices)
+                    },
+                    None => {
+                        self.errors.push(String::from("Btle has none value"));
+                    }
+                    
+                }
             }
             Message::FoundDevices(resp) => {
                 println!("scanned {:?}", resp);
@@ -138,6 +155,7 @@ impl Application for App {
                 }).collect()
         );
 
+        //todo: start listening automatically when device is connected
         let listen_btn = button("Listen")
             .on_press(Message::ListenEvents)
             .padding(5.);
