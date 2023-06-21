@@ -22,6 +22,13 @@ pub enum BluetoothError {
 }
 
 #[derive(Debug, Clone)]
+pub struct Device {
+    pub name: String,
+    pub address: String,
+    pub is_connected: bool
+}
+
+#[derive(Debug, Clone)]
 pub struct Btle {
     pub adapter: Adapter,
 }
@@ -50,7 +57,7 @@ impl Btle {
         return Err(BluetoothError::AdapterNotFound);
     }
 
-    pub async fn scan(self) -> Result<Vec<String>, ()> {
+    pub async fn scan(self) -> Result<Vec<Device>, ()> {
         self.adapter.start_scan(ScanFilter::default()).await
             .expect("Can't scan BLE adapter for connected devices...");
 
@@ -59,12 +66,17 @@ impl Btle {
 
         let devices = self.adapter.peripherals().await.unwrap();
 
-        let mut result = Vec::new();
+        let mut result: Vec<Device> = Vec::new();
         for device in devices {
-            let test = device.properties().await;
-            if let Ok(v) = test {
-                if let Some(s) = v {
-                    result.push(s.local_name.unwrap_or("unknown".to_string()));
+            let props_result = device.properties().await;
+            if let Ok(props_option) = props_result {
+                if let Some(props) = props_option {
+                    let custom_device = Device {
+                        name: props.local_name.unwrap_or("unknown".to_string()),
+                        address: props.address.to_string(),
+                        is_connected: device.is_connected().await.unwrap_or(false)
+                    };
+                    result.push(custom_device);
                 }
             }
         }

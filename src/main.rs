@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use bluetoothctl::{BluetoothError, Btle, listen_events};
+use bluetoothctl::{BluetoothError, Btle, listen_events, Device};
 
 pub mod bluetoothctl;
 pub mod state;
@@ -22,7 +22,8 @@ pub struct App {
     tick: Tick,
     display_heart_rate: u8,
     display_power: u8,
-    display_scanned_devices: Vec<String>
+    display_scanned_devices: Vec<Device>,
+    connected_devices: Vec<Device>
 }
 
 #[derive(Debug, Clone)]
@@ -35,7 +36,7 @@ enum Tick {
 pub enum Message {
     InitBluetooth(Result<Btle, BluetoothError>),
     ScanDevices,
-    FoundDevices(Result<Vec<String>, ()>),
+    FoundDevices(Result<Vec<Device>, ()>),
     Connect,
     Disconnect,
     ListenEvents,
@@ -57,7 +58,8 @@ impl Application for App {
                 tick: Tick::Listen,
                 display_heart_rate: 0,
                 display_power: 0,
-                display_scanned_devices: Vec::new()
+                display_scanned_devices: Vec::new(),
+                connected_devices: Vec::new()
             },
             Command::perform(Btle::init(), Message::InitBluetooth)
         )
@@ -79,7 +81,13 @@ impl Application for App {
             Message::FoundDevices(resp) => {
                 println!("scanned {:?}", resp);
                 if let Ok(value) = resp {
+                    let connected_devices = value.clone()
+                        .into_iter()
+                        .filter(|x| x.is_connected)
+                        .collect::<Vec<Device>>();
+
                     self.display_scanned_devices = value;
+                    self.connected_devices = connected_devices;
                 }
             }
             Message::ListenEvents => {
@@ -88,7 +96,7 @@ impl Application for App {
 
                 return Command::perform(listen_events(btle.adapter, state), Message::ReadData);
             }
-            Message::ReadData(resp) => {
+            Message::ReadData(_) => {
                 println!("Started listening data");
             }
             Message::Tick(_) => {
@@ -114,7 +122,6 @@ impl Application for App {
         }
     }
 
-    
     fn view(&self) -> Element<Message> {
         let scan_btn = button("Scan")
             .on_press(Message::ScanDevices)
@@ -125,12 +132,11 @@ impl Application for App {
             display_devices
                 .into_iter()
                 .map(|device| {
-                    row![text(device)]
+                    row![text(format!("{} {} {}", device.name, device.address, device.is_connected))]
                         .spacing(10)
                         .into()
                 }).collect()
         );
-
 
         let listen_btn = button("Listen")
             .on_press(Message::ListenEvents)
