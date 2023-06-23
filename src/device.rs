@@ -2,11 +2,41 @@ pub enum DeviceClass {
     HeartRateMonitor
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum MajorServiceClass {
     Unknow,
     Audio,
-    Rendering
+    Rendering,
+    Positioning,
+    Networking,
+    Capturing,
+    ObjectTransfer,
+    Telephony,
+    Information,
+    LimitedDiscoverableMode,
+    Reserved
+}
+
+#[derive(Debug)]
+pub enum MajorDeviceClass {
+    Miscellaneous,
+    Computer,
+    Phone,
+    LAN,
+    AudioVideo,
+    Peripheral,
+    Imaging,
+    Wearable,
+    Toy,
+    Health,
+    Uncategorized,
+    Other
+}
+
+//bits to look at 7 6 5 4 3 2
+//REF: https://www.ampedrftech.com/datasheets/cod_definition.pdf
+pub enum ComputerMajorClass {
+
 }
 
 #[derive(Debug, Clone)]
@@ -16,18 +46,69 @@ pub struct Device {
     pub is_connected: bool
 }
 
+// check whick bits are set to 1
 impl MajorServiceClass {
-    pub fn get(set_bits: Vec<usize>) -> Vec<MajorServiceClass> {
+    pub fn get(binary: String) -> Vec<MajorServiceClass> {
+        let major_service_class_bits = &binary[..11];
+        let set_bits = MajorServiceClass::get_set_bits(major_service_class_bits);
         return set_bits.into_iter()
             .map(|x| MajorServiceClass::map_value(x))
             .collect();
     }
 
+    fn get_set_bits(binary: &str) -> Vec<usize> {
+        let default_binary_length = 24;
+        let mut set_bits: Vec<usize> = Vec::new();
+
+        for (index, char) in binary.chars().enumerate() {
+            if char == '1' {
+                let set_bit = default_binary_length - (index + 1);
+                set_bits.push(set_bit);
+            }
+        }
+
+        return set_bits;
+    }
+
     fn map_value(bit: usize) -> Self {
         match bit {
+            23 => MajorServiceClass::Information,
+            22 => MajorServiceClass::Telephony,
             21 => MajorServiceClass::Audio,
+            20 => MajorServiceClass::ObjectTransfer,
+            19 => MajorServiceClass::Capturing,
             18 => MajorServiceClass::Rendering,
+            17 => MajorServiceClass::Networking,
+            16 => MajorServiceClass::Positioning,
+            15 => MajorServiceClass::Reserved,
+            14 => MajorServiceClass::Reserved,
+            13 => MajorServiceClass::LimitedDiscoverableMode,
             _ => MajorServiceClass::Unknow
+        }
+    }
+}
+
+
+// bits to look at 12 11 10 9 8
+impl MajorDeviceClass {
+    pub fn get(binary: &str) -> MajorDeviceClass {
+        return MajorDeviceClass::map_value(binary);
+    }
+
+    fn map_value(binary: &str) -> Self {
+        match binary {
+            "00000" => MajorDeviceClass::Miscellaneous,
+            "00001" => MajorDeviceClass::Computer,
+            "00010" => MajorDeviceClass::Phone,
+            "00011" => MajorDeviceClass::LAN,
+            "00100" => MajorDeviceClass::AudioVideo,
+            "00101" => MajorDeviceClass::Peripheral,
+            "00110" => MajorDeviceClass::Imaging,
+            "00111" => MajorDeviceClass::Wearable,
+            "01000" => MajorDeviceClass::Toy,
+            "01001" => MajorDeviceClass::Health,
+            "11111" => MajorDeviceClass::Uncategorized,
+            _ => MajorDeviceClass::Other
         }
     }
 }
@@ -57,40 +138,24 @@ impl Device {
         let test = 0x00240404;
         let binary = format!("{test:024b}");
 
-        let major_service_class_binary = &binary[..11];
-        let set_bits = Device::get_set_bits(major_service_class_binary);
+        let major_service_class = MajorServiceClass::get(binary);
 
-        let class = MajorServiceClass::get(set_bits);
-        println!("binary {:?}", class);
+        println!("binary {:?}", major_service_class);
         return DeviceClass::HeartRateMonitor;
-    }
-
-    fn get_major_service_class(binary: String) {
-        let major_service_class_binary = &binary[..11];
-        todo!();
-    }
-
-    fn get_major_device_class() {
-        todo!();
-    }
-
-    fn get_minor_device_class() {
-        todo!();
-    }
-
-    fn get_set_bits(binary: &str) -> Vec<usize> {
-        let default_binary_length = 24;
-        let mut set_bits: Vec<usize> = Vec::new();
-
-        for (index, char) in binary.chars().enumerate() {
-            if char == '1' {
-                let set_bit = default_binary_length - (index + 1);
-                set_bits.push(set_bit);
-            }
-        }
-
-        return set_bits;
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use crate::device::MajorServiceClass;
 
+    #[test]
+    fn get_major_service_class() {
+        let test = 0x00240404;
+        let binary = format!("{test:024b}");
+
+        let major_service_class = MajorServiceClass::get(binary);
+
+        assert!(major_service_class.contains(&MajorServiceClass::Audio));
+    }
+}
