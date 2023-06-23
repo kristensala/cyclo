@@ -8,6 +8,7 @@ use futures::stream::StreamExt;
 use thiserror::Error;
 use tokio::time;
 
+use crate::device::Device;
 use crate::state::State;
 
 const HEART_RATE_SERVICE: uuid::Uuid = uuid_from_u16(0x180D);
@@ -21,12 +22,6 @@ pub enum BluetoothError {
     AdapterNotFound
 }
 
-#[derive(Debug, Clone)]
-pub struct Device {
-    pub name: String,
-    pub address: String,
-    pub is_connected: bool
-}
 
 #[derive(Debug, Clone)]
 pub struct Btle {

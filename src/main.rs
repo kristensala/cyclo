@@ -1,10 +1,12 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use bluetoothctl::{BluetoothError, Btle, listen_events, Device};
+use bluetoothctl::{BluetoothError, Btle, listen_events};
 
 pub mod bluetoothctl;
 pub mod state;
+pub mod device;
 
+use device::Device;
 use iced::theme::{self, Theme};
 use iced::{executor, subscription, time};
 use iced::widget::{
@@ -182,6 +184,8 @@ impl Application for App {
 }
 
 fn main() -> iced::Result {
+
+    Device::get_class(String::from("00240404"));
     return App::run(Settings::default());
 }
 
