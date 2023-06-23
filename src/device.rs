@@ -1,5 +1,16 @@
-pub enum DeviceClass {
-    HeartRateMonitor
+pub enum MinorDeviceClass {
+    NotSupported,
+    Unknown,
+    Other,
+    //Health
+    Undefined,
+    BloodPressureMonitor,
+    Thermometer,
+    WeighingScale,
+    GlucoseMeter,
+    PulseOximeter,
+    HeartRateMonitor,
+    HealthDataDisplay,
 }
 
 #[derive(Debug, PartialEq)]
@@ -35,9 +46,6 @@ pub enum MajorDeviceClass {
 
 //bits to look at 7 6 5 4 3 2
 //REF: https://www.ampedrftech.com/datasheets/cod_definition.pdf
-pub enum ComputerMajorClass {
-
-}
 
 #[derive(Debug, Clone)]
 pub struct Device {
@@ -89,7 +97,7 @@ impl MajorServiceClass {
 }
 
 
-// bits to look at 12 11 10 9 8
+//TODO: bits to look at 12 11 10 9 8
 impl MajorDeviceClass {
     pub fn get(binary: &str) -> MajorDeviceClass {
         return MajorDeviceClass::map_value(binary);
@@ -109,6 +117,28 @@ impl MajorDeviceClass {
             "01001" => MajorDeviceClass::Health,
             "11111" => MajorDeviceClass::Uncategorized,
             _ => MajorDeviceClass::Other
+        }
+    }
+}
+
+impl MinorDeviceClass {
+    pub fn get(binary: &str, major_device_class: MajorDeviceClass) -> MinorDeviceClass {
+        //todo: get correct binary slice bits 7 to 2
+        match major_device_class {
+            MajorDeviceClass::Health => {
+                match binary {
+                    "00000" => MinorDeviceClass::Undefined,
+                    "00001" => MinorDeviceClass::BloodPressureMonitor,
+                    "00010" => MinorDeviceClass::Thermometer,
+                    "00011" => MinorDeviceClass::WeighingScale,
+                    "00100" => MinorDeviceClass::GlucoseMeter,
+                    "00101" => MinorDeviceClass::PulseOximeter,
+                    "00110" => MinorDeviceClass::HeartRateMonitor,
+                    "00111" => MinorDeviceClass::HealthDataDisplay,
+                    _ => MinorDeviceClass::Other
+                }
+            }
+            _ => MinorDeviceClass::NotSupported
         }
     }
 }
@@ -134,14 +164,14 @@ impl Device {
 
     The Bluetooth Hands-Free profile driver bthhfenum.sys translates “Wearable Headset Device” to KSNODETYPE_HEADSET.
     */
-    pub fn get_class(hex_class: String) -> DeviceClass {
-        let test = 0x00240404;
+    pub fn get_class(hex_class: String) -> MinorDeviceClass {
+        let test = 0x00240404; // wearable headphones
         let binary = format!("{test:024b}");
 
         let major_service_class = MajorServiceClass::get(binary);
 
         println!("binary {:?}", major_service_class);
-        return DeviceClass::HeartRateMonitor;
+        return MinorDeviceClass::HeartRateMonitor;
     }
 }
 
