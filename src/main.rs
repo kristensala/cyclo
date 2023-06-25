@@ -17,8 +17,20 @@ use iced::{
 };
 use state::State;
 
+#[derive(Debug, Clone)]
+struct Stopwatch {
+    duration: Duration,
+    state: StopwatchState
+}
+
+#[derive(Debug, Clone)]
+enum StopwatchState {
+    Idle,
+    Ticking { last_tick: Instant }
+}
+
 #[derive(Clone, Debug)]
-pub struct App {
+struct App {
     btle: Option<Btle>,
     state: Arc<Mutex<State>>,
     tick: Tick,
@@ -26,7 +38,8 @@ pub struct App {
     display_power: u8, // don't know the datatype currently
     display_scanned_devices: Vec<Device>,
     connected_devices: Vec<Device>,
-    errors: Vec<String>
+    errors: Vec<String>,
+    stopwatch: Stopwatch
 }
 
 #[derive(Debug, Clone)]
@@ -47,6 +60,15 @@ pub enum Message {
     Tick(Instant)
 }
 
+impl Stopwatch {
+    fn new() -> Stopwatch {
+        return Stopwatch {
+            duration: Duration::default(),
+            state: StopwatchState::Idle
+        }
+    }
+}
+
 impl Application for App {
     type Message = Message;
     type Theme = Theme;
@@ -63,7 +85,8 @@ impl Application for App {
                 display_power: 0,
                 display_scanned_devices: Vec::new(),
                 connected_devices: Vec::new(),
-                errors: Vec::new()
+                errors: Vec::new(),
+                stopwatch: Stopwatch::new()
             },
             Command::perform(Btle::init(), Message::InitBluetooth)
         )
@@ -106,6 +129,9 @@ impl Application for App {
                         .collect::<Vec<Device>>();
 
                     self.display_scanned_devices = value;
+
+                    // add only valid devices to the list 
+                    // like hr monitor and turbo trainer
                     self.connected_devices = connected_devices;
                 }
             }
@@ -118,11 +144,16 @@ impl Application for App {
             Message::ReadData(_) => {
                 println!("Started listening data");
             }
-            Message::Tick(_) => {
+            Message::Tick(now) => {
                 let clone = Arc::clone(&self.state);
                 let lock = clone.lock().unwrap();
                 self.display_heart_rate = lock.heart_rate;
                 //todo set display power
+
+                if let StopwatchState::Ticking { last_tick } = &mut self.stopwatch.state {
+                    self.stopwatch.duration += now - *last_tick;
+                    *last_tick = now;
+                }
             }
             _ => {
 
@@ -142,6 +173,9 @@ impl Application for App {
     }
 
     fn view(&self) -> Element<Message> {
+        const MINUTE: u64 = 60;
+        const HOUR: u64 = 60 * MINUTE;
+
         let scan_btn = button("Scan")
             .on_press(Message::ScanDevices)
             .padding(5.);
@@ -164,11 +198,21 @@ impl Application for App {
 
         let heart_beat = text(self.display_heart_rate).size(40);
 
+        let seconds = self.stopwatch.duration.as_secs();
+        let stopwatch = text(format!(
+            "{:0>2}:{:0>2}:{:0>2}",
+            seconds / HOUR,
+            (seconds % HOUR) / MINUTE,
+            seconds % MINUTE
+        ))
+        .size(40);
+
         let content = column![
             scan_btn,
             scanned_devices,
             listen_btn,
-            heart_beat
+            heart_beat,
+            stopwatch
         ]
         .width(Length::Fill)
         .align_items(Alignment::Center)

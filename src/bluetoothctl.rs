@@ -8,7 +8,7 @@ use futures::stream::StreamExt;
 use thiserror::Error;
 use tokio::time;
 
-use crate::device::Device;
+use crate::device::{Device, MinorDeviceClass};
 use crate::state::State;
 
 const HEART_RATE_SERVICE: uuid::Uuid = uuid_from_u16(0x180D);
@@ -69,7 +69,8 @@ impl Btle {
                     let custom_device = Device {
                         name: props.local_name.unwrap_or("unknown".to_string()),
                         address: props.address.to_string(),
-                        is_connected: device.is_connected().await.unwrap_or(false)
+                        is_connected: device.is_connected().await.unwrap_or(false),
+                        minor_device_class: MinorDeviceClass::Unknown
                     };
                     result.push(custom_device);
                 }

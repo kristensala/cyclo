@@ -1,8 +1,9 @@
+#[derive(Debug, Clone)]
 pub enum MinorDeviceClass {
     NotSupported,
     Unknown,
     Other,
-    //Health
+    //Health devices
     Undefined,
     BloodPressureMonitor,
     Thermometer,
@@ -51,7 +52,8 @@ pub enum MajorDeviceClass {
 pub struct Device {
     pub name: String,
     pub address: String,
-    pub is_connected: bool
+    pub is_connected: bool,
+    pub minor_device_class: MinorDeviceClass
 }
 
 // check whick bits are set to 1
@@ -144,7 +146,11 @@ impl MinorDeviceClass {
 }
 
 impl Device {
-    pub fn new() -> Device {
+    pub fn new(_name: String,
+        _address: String,
+        _is_connected: bool,
+        _device_class: MinorDeviceClass) -> Device {
+
         todo!();
     }
 
