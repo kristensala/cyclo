@@ -29,7 +29,7 @@ pub enum MajorServiceClass {
     Reserved
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum MajorDeviceClass {
     Miscellaneous,
     Computer,
@@ -101,8 +101,10 @@ impl MajorServiceClass {
 
 //TODO: bits to look at 12 11 10 9 8
 impl MajorDeviceClass {
-    pub fn get(binary: &str) -> MajorDeviceClass {
-        return MajorDeviceClass::map_value(binary);
+    pub fn get(binary: String) -> MajorDeviceClass {
+        let major_device_class_slice = &binary[11..16];
+        println!("major device class: {:?}", major_device_class_slice);
+        return MajorDeviceClass::map_value(major_device_class_slice);
     }
 
     fn map_value(binary: &str) -> Self {
@@ -124,11 +126,11 @@ impl MajorDeviceClass {
 }
 
 impl MinorDeviceClass {
-    pub fn get(binary: &str, major_device_class: MajorDeviceClass) -> MinorDeviceClass {
-        //todo: get correct binary slice bits 7 to 2
+    pub fn get(binary: String, major_device_class: MajorDeviceClass) -> MinorDeviceClass {
+        let minor_device_class_slice = &binary[16..21];
         match major_device_class {
             MajorDeviceClass::Health => {
-                match binary {
+                match minor_device_class_slice {
                     "00000" => MinorDeviceClass::Undefined,
                     "00001" => MinorDeviceClass::BloodPressureMonitor,
                     "00010" => MinorDeviceClass::Thermometer,
@@ -146,14 +148,6 @@ impl MinorDeviceClass {
 }
 
 impl Device {
-    pub fn new(_name: String,
-        _address: String,
-        _is_connected: bool,
-        _device_class: MinorDeviceClass) -> Device {
-
-        todo!();
-    }
-
     /*
     To parse the hexadecimal value 0x00240404, truncate it to 24 bits and rewrite it in binary first: 0010 0100 0000 0100 0000 0100. Then number the bits as follows: (bit 23) (bit 22) (bit 21) … (bit 3) (bit 2) (bit 1) (bit 0)
 
@@ -170,14 +164,13 @@ impl Device {
 
     The Bluetooth Hands-Free profile driver bthhfenum.sys translates “Wearable Headset Device” to KSNODETYPE_HEADSET.
     */
-    pub fn get_class(hex_class: String) -> MinorDeviceClass {
-        let test = 0x00240404; // wearable headphones
-        let binary = format!("{test:024b}");
+    pub fn get_class(class: u32) -> MinorDeviceClass {
+        //let test = 0x00240404; // wearable headphones
+        let binary = format!("{class:024b}");
 
-        let major_service_class = MajorServiceClass::get(binary);
-
-        println!("binary {:?}", major_service_class);
-        return MinorDeviceClass::HeartRateMonitor;
+        let major_device_class = MajorDeviceClass::get(binary.clone());
+        let minor_device_class = MinorDeviceClass::get(binary.clone(), major_device_class);
+        return minor_device_class;
     }
 }
 

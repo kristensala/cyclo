@@ -70,7 +70,7 @@ impl Btle {
                         name: props.local_name.unwrap_or("unknown".to_string()),
                         address: props.address.to_string(),
                         is_connected: device.is_connected().await.unwrap_or(false),
-                        minor_device_class: MinorDeviceClass::Unknown
+                        minor_device_class: Device::get_class(props.class.unwrap_or(0))
                     };
                     result.push(custom_device);
                 }

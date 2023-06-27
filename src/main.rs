@@ -49,7 +49,7 @@ enum Tick {
 }
 
 #[derive(Debug, Clone)]
-pub enum Message {
+enum Message {
     InitBluetooth(Result<Btle, BluetoothError>),
     ScanDevices,
     FoundDevices(Result<Vec<Device>, ()>),
@@ -148,7 +148,13 @@ impl Application for App {
                 let clone = Arc::clone(&self.state);
                 let lock = clone.lock().unwrap();
                 self.display_heart_rate = lock.heart_rate;
-                //todo set display power
+                // todo set display power
+                // if power value comes in start the stopwatch
+                // first wait for couple of seconds
+                // also stop the timer if power values stop coming in
+                // once timer is started also start recording the data
+                // maybe use sqlite or just write a csv file
+                // to write a fit file probably use golang
 
                 if let StopwatchState::Ticking { last_tick } = &mut self.stopwatch.state {
                     self.stopwatch.duration += now - *last_tick;
@@ -167,7 +173,8 @@ impl Application for App {
         match self.tick {
             Tick::Idle=> Subscription::none(),
             Tick::Listen => {
-                time::every(Duration::from_millis(500)).map(Message::Tick)
+                time::every(Duration::from_millis(1000))
+                    .map(Message::Tick)
             },
         }
     }
@@ -228,8 +235,6 @@ impl Application for App {
 }
 
 fn main() -> iced::Result {
-
-    Device::get_class(String::from("00240404"));
     return App::run(Settings::default());
 }
 
