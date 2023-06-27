@@ -63,16 +63,28 @@ impl Btle {
 
         let mut result: Vec<Device> = Vec::new();
         for device in devices {
+            //TODO: maybe little less nesting
             let props_result = device.properties().await;
             if let Ok(props_option) = props_result {
                 if let Some(props) = props_option {
-                    let custom_device = Device {
-                        name: props.local_name.unwrap_or("unknown".to_string()),
-                        address: props.address.to_string(),
-                        is_connected: device.is_connected().await.unwrap_or(false),
-                        minor_device_class: Device::get_class(props.class.unwrap_or(0))
-                    };
-                    result.push(custom_device);
+                    if let Some(class) = props.class {
+                        let _minor_device_class = Device::get_class(class);
+
+                        // display only heart rate monitors
+                        // and later turbo trainers
+                        match _minor_device_class {
+                            MinorDeviceClass::HeartRateMonitor => {
+                                let custom_device = Device {
+                                    name: props.local_name.unwrap_or("unknown".to_string()),
+                                    address: props.address.to_string(),
+                                    is_connected: device.is_connected().await.unwrap_or(false),
+                                    minor_device_class: _minor_device_class
+                                };
+                                result.push(custom_device);
+                            }
+                            _ => {}
+                        }
+                    }
                 }
             }
         }
@@ -93,6 +105,8 @@ pub async fn listen_events(adapter: Adapter, state: Arc<Mutex<State>>) -> Result
         while let Some(event) = events.next().await {
             match event {
                 CentralEvent::DeviceConnected(id) => {
+                    // TODO: go through this abomination only when the correct devices are
+                    // connected and start listening their notifications
                     println!("connected to device {:?}", id);
 
                     let peripehral = adapter.peripheral(&id).await.unwrap();
